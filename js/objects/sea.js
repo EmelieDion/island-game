@@ -1,5 +1,5 @@
 import * as THREE from 'three/webgpu';
-import { wgslFn, uniform, uv, attribute, positionLocal, sin, cos, vec3, mix, step, floor, color, colorSpaceToWorking } from 'three/tsl';
+import { wgslFn, uniform, uv, attribute, positionLocal, sin, cos, vec3, mix, smoothstep, floor, color, colorSpaceToWorking } from 'three/tsl';
 
 import seaShader from '../shaders/sea/fragment.wgsl?raw';
 import { terrainHeight } from './island.js';
@@ -61,8 +61,8 @@ export const createSea = () => {
 
   const p = positionLocal;
   const t = uniforms.time;
-  const wave = sin(p.x.mul(0.55).add(t.mul(1.3))).mul(cos(p.z.mul(0.45).add(t.mul(0.9))))
-    .add(sin(p.x.add(p.z).mul(0.9).add(t.mul(2.1))).mul(0.35))
+  const wave = sin(p.x.mul(0.32).add(t.mul(0.8))).mul(cos(p.z.mul(0.28).add(t.mul(0.6))))
+    .add(sin(p.x.add(p.z).mul(0.55).add(t.mul(1.2))).mul(0.3))
     .mul(uniforms.waveHeight);
 
   const center = attribute('center', 'vec3');
@@ -74,7 +74,7 @@ export const createSea = () => {
     glints: uniforms.glints,
   }), THREE.SRGBColorSpace);
   const glint = caustic.r;
-  const banded = mix(mix(DEEP, MID, step(0.04, glint)), LIGHT, step(0.25, glint));
+  const banded = mix(mix(DEEP, MID, smoothstep(0.0, 0.12, glint)), LIGHT, smoothstep(0.15, 0.6, glint));
   const surfaceColor = mix(banded, FOAM, attribute('shore', 'float'));
 
   const material = new THREE.MeshStandardNodeMaterial({ flatShading: true, roughness: 0.45, metalness: 0 });
@@ -99,8 +99,8 @@ export const createSea = () => {
 
   const update = (deltaTime, mouse, day, wind) => {
     uniforms.time.value += deltaTime * (1 + wind * 1.5);
-    uniforms.waveHeight.value = 0.2 + wind * 0.22;
-    uniforms.iTime.value += deltaTime * (0.3 + mouse.x * 2.7 + wind * 1.5);
+    uniforms.waveHeight.value = 0.32 + wind * 0.15;
+    uniforms.iTime.value += deltaTime * (0.05 + mouse.x * 0.35 + wind * 0.2);
     const glintsTarget = 0.55 + (1 - mouse.y) * 0.45;
     uniforms.glints.value += (glintsTarget - uniforms.glints.value) * Math.min(1, deltaTime * 3);
     uniforms.night.value = 1 - day;
@@ -108,8 +108,8 @@ export const createSea = () => {
 
   const getHeight = (x, z) => {
     const time = uniforms.time.value;
-    const height = Math.sin(x * 0.55 + time * 1.3) * Math.cos(z * 0.45 + time * 0.9)
-      + Math.sin((x + z) * 0.9 + time * 2.1) * 0.35;
+    const height = Math.sin(x * 0.32 + time * 0.8) * Math.cos(z * 0.28 + time * 0.6)
+      + Math.sin((x + z) * 0.55 + time * 1.2) * 0.3;
     return height * uniforms.waveHeight.value;
   };
 

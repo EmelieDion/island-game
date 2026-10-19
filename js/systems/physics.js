@@ -48,15 +48,23 @@ export const createPhysics = async (terrain) => {
     const inSea = Math.hypot(position.x, position.z) < SEA_RADIUS;
     const depth = waterHeight(position.x, position.z) - (position.y - item.size);
     if (!inSea || depth <= 0) {
+      item.inWater = false;
       item.body.setLinearDamping(0.05);
       item.body.setAngularDamping(0.1);
       return;
     }
+    if (!item.inWater) {
+      item.inWater = true;
+      const velocity = item.body.linvel();
+      item.body.setLinvel({ x: velocity.x * 0.35, y: velocity.y * 0.15, z: velocity.z * 0.35 }, true);
+      const spin = item.body.angvel();
+      item.body.setAngvel({ x: spin.x * 0.3, y: spin.y * 0.3, z: spin.z * 0.3 }, true);
+    }
     const submerged = Math.min(depth / (item.size * 2), 1);
     const lift = item.body.mass() * 9.81 * item.floatiness * submerged * STEP;
     item.body.applyImpulse({ x: 0, y: lift, z: 0 }, true);
-    item.body.setLinearDamping(1.5);
-    item.body.setAngularDamping(1.5);
+    item.body.setLinearDamping(3);
+    item.body.setAngularDamping(2.5);
   };
 
   const rewind = () => {
