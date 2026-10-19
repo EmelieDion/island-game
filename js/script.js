@@ -41,6 +41,12 @@ const MAX_PROJECTILES = 40;
 let selectedTool = 'ball';
 
 const init = async () => {
+  const adapter = navigator.gpu && await navigator.gpu.requestAdapter();
+  if (!adapter) {
+    document.getElementById('startButton').textContent = 'This game needs WebGPU. Open it in a recent Chrome, Edge or Firefox.';
+    return;
+  }
+
   renderer = new THREE.WebGPURenderer({ canvas: $canvas, alpha: false, antialias: true });
   renderer.shadowMap.enabled = true;
   await renderer.init();
