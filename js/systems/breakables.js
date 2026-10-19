@@ -246,6 +246,7 @@ export const createBreakables = (physics, scene) => {
       });
       house.repairing = false;
       house.fast = false;
+      if (house.onRepaired) house.onRepaired(house);
     }
   };
 
@@ -263,6 +264,36 @@ export const createBreakables = (physics, scene) => {
         }
       });
       if (nearest) breakAround(house, nearest, getVelocity(nearest.home.position), power);
+    });
+  };
+
+  const findNearest = (point, radius) => {
+    let nearest = null;
+    let nearestDistance = radius;
+    houses.forEach((house) => {
+      house.pieces.forEach((piece) => {
+        const distance = piece.mesh.position.distanceTo(point);
+        if (distance < nearestDistance) {
+          nearest = house;
+          nearestDistance = distance;
+        }
+      });
+    });
+    return nearest;
+  };
+
+  const collapse = (house) => {
+    house.lastHit = now;
+    house.repairing = false;
+    const middle = new THREE.Vector3();
+    house.pieces.forEach((piece) => middle.add(piece.mesh.position));
+    middle.divideScalar(house.pieces.length);
+    house.pieces.forEach((piece) => {
+      piece.broken = true;
+      piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+      const outward = piece.mesh.position.clone().sub(middle).setY(0).normalize().multiplyScalar(1.5 + Math.random());
+      piece.body.setLinvel({ x: outward.x, y: 0.3, z: outward.z }, true);
+      piece.body.setAngvel({ x: (Math.random() - 0.5) * 4, y: 0, z: (Math.random() - 0.5) * 4 }, true);
     });
   };
 
@@ -295,5 +326,5 @@ export const createBreakables = (physics, scene) => {
     });
   };
 
-  return { addHouse, addTree, addWindmill, addBoat, addStatic, blast, rewind, update };
+  return { addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update };
 };
