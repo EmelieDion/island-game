@@ -1,6 +1,6 @@
 # Chaos Island
 
-A floating island sandbox: control the weather, throw things at the village and watch it rebuild itself.
+A floating island sandbox: control the weather, throw things at the village and watch the villagers rebuild it.
 
 **Live:** https://emeliedion.github.io/island-game/
 
@@ -9,7 +9,7 @@ A floating island sandbox: control the weather, throw things at the village and 
 - Sea: [Tileable Water Caustic](https://www.shadertoy.com/view/MdlXz8) by Dave_Hoskins
 - Northern lights: [Auroras](https://www.shadertoy.com/view/XtGGRt) by nimitz
 
-Ported to WGSL in `js/shaders/`. The sky is a custom WGSL shader (not from Shadertoy).
+Ported to WGSL in `js/shaders/`. The sea is a low-poly mesh: every triangle samples the caustic shader once, so the water keeps the flat look of the island. The sky and the fire are custom WGSL shaders (not from Shadertoy).
 
 ## Controls
 
@@ -20,11 +20,26 @@ Ported to WGSL in `js/shaders/`. The sky is a custom WGSL shader (not from Shade
 - Time lever (`R`): rewind everything
 - Snow at night shows the northern lights
 
+## Tools
+
+- Beach ball: bounces around, knocks villagers over but never breaks anything
+- Barrel and rock: smash houses, trees and the boat, then float or sink
+- Lightning: sets houses and trees on fire. Fire spreads with strong wind and goes out in the rain
+- Wind gust: blows roofs off, pushes things away and fans the fire
+
+## Villagers
+
+- They walk around the village and run away when something lands or burns near them
+- After a hit they pick up the loose blocks and carry them back until the house is rebuilt
+- Blocks that end up in the sea come back as new blocks on the village square
+- Trees, the windmill and the boat repair themselves, the time lever repairs everything at once
+
 ## Extras
 
-- Rapier physics: everything breaks apart, floats and rebuilds itself
+- Rapier physics: everything breaks apart, floats and gets rebuilt
 - TSL compute shaders for rain and snow
-- Sound with the Web Audio API
+- Sound with the Web Audio API, including crackling fire
+- The camera always stays above the island and the water
 
 ## My Blender models
 
@@ -36,3 +51,5 @@ Ported to WGSL in `js/shaders/`. The sky is a custom WGSL shader (not from Shade
 - [Tree](https://poly.pizza/m/6Yjt8nIwLsD) by Marc Solà (CC BY 3.0)
 - [Tree](https://poly.pizza/m/6pwiq7hSrHr) by Poly by Google (CC BY 3.0)
 - [Sailboat](https://poly.pizza/m/1d76pfN4Dne) by Poly by Google (CC BY 3.0)
+- [Worker](https://poly.pizza/m/Yg2bQZO6Hj) by Quaternius (CC0)
+- [Farmer](https://poly.pizza/m/7pn3R6hPvE) by Quaternius (CC0)
