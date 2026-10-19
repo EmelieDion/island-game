@@ -73,7 +73,7 @@ export const loadModels = async () => {
 
   const setBrightness = (brightness) => {
     houseMaterials.forEach((material) => {
-      material.color.copy(material.userData.tint).multiplyScalar(WALL_BRIGHTNESS * brightness);
+      material.color.copy(material.userData.tint).multiplyScalar(WALL_BRIGHTNESS * brightness * (1 - (material.userData.char || 0) * 0.8));
     });
   };
 

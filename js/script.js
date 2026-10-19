@@ -17,6 +17,7 @@ import { createRock, ROCK_SIZE } from './objects/rock.js';
 import { loadScenery } from './objects/scenery.js';
 import { createEffects } from './objects/effects.js';
 import { createAudio } from './systems/audio.js';
+import { createFire } from './systems/fire.js';
 
 const $canvas = document.getElementById('webgl');
 let renderer, camera, scene, controls;
@@ -29,7 +30,7 @@ const dayCycle = createDayCycle(13);
 const sunColor = new THREE.Color();
 const timer = new THREE.Timer();
 const mouse = new THREE.Vector2(0.3, 0.5);
-let physics, waterHeight, breakables, scenery, effects;
+let physics, waterHeight, breakables, scenery, effects, fire;
 const audio = createAudio();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -69,6 +70,7 @@ const init = async () => {
   physics = await createPhysics(terrain);
   breakables = createBreakables(physics, scene);
   effects = createEffects(scene);
+  fire = createFire(scene, breakables, { onDouse: () => audio.hiss() });
 
   rain = createRain();
   scene.add(rain.mesh);
@@ -243,7 +245,7 @@ const projectiles = {
     collider: () => physics.RAPIER.ColliderDesc.ball(BEACH_BALL_RADIUS).setDensity(0.15).setRestitution(0.75).setFriction(0.6),
     size: BEACH_BALL_RADIUS,
     floatiness: 4,
-    power: 0.6,
+    power: 0,
     speed: 16,
   },
   barrel: {
@@ -285,6 +287,7 @@ const pullLever = () => {
   const $lever = document.getElementById('lever');
   if ($lever.classList.contains('is-pulled')) return;
   physics.rewind();
+  fire.extinguishAll();
   breakables.rewind();
   audio.rewind();
   $lever.classList.add('is-pulled');
@@ -300,14 +303,19 @@ const findTarget = () => {
 const strikeLightning = (point) => {
   effects.strike(point);
   audio.thunder();
-  const away = (position) => new THREE.Vector3(position.x - point.x, 0, position.z - point.z).normalize().multiplyScalar(6).add(new THREE.Vector3(0, 7, 0));
-  breakables.blast(point, 2.2, away, 3);
+  const away = (position) => new THREE.Vector3(position.x - point.x, 0, position.z - point.z).normalize().multiplyScalar(4).add(new THREE.Vector3(0, 5, 0));
+  const target = breakables.findNearest(point, 2.5);
+  if (target) {
+    target.onRepaired = () => fire.setChar(target, 0);
+    fire.ignite(target, timer.getElapsed());
+  }
   physics.blast(point, 3, away);
 };
 
 const blowGust = (point) => {
   const direction = new THREE.Vector3(point.x - camera.position.x, 0, point.z - camera.position.z).normalize();
   effects.blow(point, direction);
+  fire.spread(point, direction, timer.getElapsed());
   audio.whoosh(1);
   const along = () => direction.clone().multiplyScalar(10).add(new THREE.Vector3(0, 3, 0));
   breakables.blast(point, 3, along, 0.8, true);
@@ -387,6 +395,8 @@ const draw = () => {
   scenery.update(timer.getElapsed(), waterHeight);
   updateWindmill(deltaTime, weather.wind);
   effects.update(deltaTime);
+  fire.update(deltaTime, timer.getElapsed(), weather.rain, wind);
+  audio.setFire(fire.getLevel());
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
   controls.update();
