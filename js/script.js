@@ -59,6 +59,7 @@ const init = async () => {
   controls.target.set(0, 1, 0);
   controls.maxDistance = 85;
   controls.minDistance = 5;
+  controls.maxPolarAngle = Math.PI * 0.44;
 
   const { mesh, update, getHeight } = createSea();
   seaMesh = mesh;
@@ -291,6 +292,19 @@ const throwProjectile = (e) => {
   if (physics.items.length > MAX_PROJECTILES) physics.remove(physics.items[0]);
 };
 
+const keepCameraOutside = () => {
+  const target = controls.target;
+  const reach = Math.hypot(target.x, target.z);
+  if (reach > 14) {
+    target.x *= 14 / reach;
+    target.z *= 14 / reach;
+  }
+  target.y = THREE.MathUtils.clamp(target.y, 0, 4);
+  const { x, z } = camera.position;
+  const floor = Math.max(terrainHeight(x, z), waterHeight(x, z)) + 1;
+  if (camera.position.y < floor) camera.position.y = floor;
+};
+
 const pullLever = () => {
   const $lever = document.getElementById('lever');
   if ($lever.classList.contains('is-pulled')) return;
@@ -412,6 +426,7 @@ const draw = () => {
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
   controls.update();
+  keepCameraOutside();
   renderer.render(scene, camera);
 };
 

@@ -202,7 +202,7 @@ export const createBreakables = (physics, scene) => {
   physics.onCollision((handle1, handle2) => {
     const piece = pieceByCollider.get(handle1) || pieceByCollider.get(handle2);
     const item = physics.itemByCollider.get(handle1) || physics.itemByCollider.get(handle2);
-    if (!piece || !item || item.rewind) return;
+    if (!piece || !item || item.rewind || !physics.isArmed(item)) return;
     if (piece.broken) return;
     const velocity = item.velocityBefore || item.body.linvel();
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
@@ -355,6 +355,15 @@ export const createBreakables = (physics, scene) => {
     piece.returning = { start: now, duration, size: piece.baseScale ? piece.mesh.scale.x / piece.baseScale.x : 1 };
   };
 
+  const movePiece = (piece, target) => {
+    piece.body.setTranslation(target, true);
+    piece.body.setRotation(piece.home.quaternion, true);
+    piece.body.setLinvel({ x: 0, y: 0, z: 0 }, true);
+    piece.body.setAngvel({ x: 0, y: 0, z: 0 }, true);
+    piece.mesh.position.copy(target);
+    piece.mesh.quaternion.copy(piece.home.quaternion);
+  };
+
   const takePiece = (piece) => {
     piece.carried = true;
     setSize(piece, CARRY_SIZE);
@@ -409,5 +418,5 @@ export const createBreakables = (physics, scene) => {
     });
   };
 
-  return { records: houses, addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update, housesToRebuild, sendHome, takePiece, carryPiece, dropPiece };
+  return { records: houses, addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update, housesToRebuild, sendHome, movePiece, takePiece, carryPiece, dropPiece };
 };

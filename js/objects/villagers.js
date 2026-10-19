@@ -47,6 +47,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
   const loader = new GLTFLoader();
   const models = await Promise.all(['assets/worker.glb', 'assets/farmer.glb'].map((url) => loader.loadAsync(url)));
   const streets = findStreets(houses);
+  const depot = [...streets].sort((a, b) => a.distanceTo(VILLAGE) - b.distanceTo(VILLAGE))[0];
   const villagers = [];
 
   for (let i = 0; i < COUNT; i++) {
@@ -210,7 +211,11 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
     const houses = breakables.housesToRebuild().filter((house) => !isBurning(house));
     houses.forEach((house) => {
       house.pieces.forEach((piece) => {
-        if (piece.broken && !piece.carried && !piece.returning && !piece.claimedBy && !isReachable(piece)) breakables.sendHome(piece);
+        if (!piece.broken || piece.carried || piece.returning || piece.claimedBy || isReachable(piece)) return;
+        if (!isResting(piece) && piece.mesh.position.y > -3) return;
+        const x = depot.x + (Math.random() - 0.5) * 0.5;
+        const z = depot.y + (Math.random() - 0.5) * 0.5;
+        breakables.movePiece(piece, new THREE.Vector3(x, terrainHeight(x, z) + 0.6 + Math.random() * 0.6, z));
       });
     });
 

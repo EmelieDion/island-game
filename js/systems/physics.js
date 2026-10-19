@@ -1,6 +1,7 @@
 import RAPIER from '@dimforge/rapier3d-compat';
 
 const STEP = 1 / 60;
+const ARMED_TIME = 0.3;
 const REWIND_TIME = 1.2;
 const SEA_RADIUS = 30;
 
@@ -55,6 +56,7 @@ export const createPhysics = async (terrain) => {
     }
     if (!item.inWater) {
       item.inWater = true;
+      if (item.hitAt === undefined) item.hitAt = clock;
       const velocity = item.body.linvel();
       item.body.setLinvel({ x: velocity.x * 0.35, y: velocity.y * 0.15, z: velocity.z * 0.35 }, true);
       const spin = item.body.angvel();
@@ -102,7 +104,12 @@ export const createPhysics = async (terrain) => {
       });
       world.step(eventQueue);
       eventQueue.drainCollisionEvents((handle1, handle2, started) => {
-        if (started) collisionListeners.forEach((listener) => listener(handle1, handle2));
+        if (!started) return;
+        [handle1, handle2].forEach((handle) => {
+          const item = itemByCollider.get(handle);
+          if (item && item.hitAt === undefined) item.hitAt = clock;
+        });
+        collisionListeners.forEach((listener) => listener(handle1, handle2));
       });
       accumulator -= STEP;
     }
@@ -132,5 +139,7 @@ export const createPhysics = async (terrain) => {
 
   const onCollision = (listener) => collisionListeners.push(listener);
 
-  return { RAPIER, world, items, itemByCollider, add, remove, rewind, blast, update, onCollision };
+  const isArmed = (item) => item.hitAt === undefined || clock - item.hitAt < ARMED_TIME;
+
+  return { RAPIER, world, items, itemByCollider, add, remove, rewind, blast, update, onCollision, isArmed };
 };
