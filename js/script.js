@@ -18,6 +18,7 @@ import { loadScenery } from './objects/scenery.js';
 import { createEffects } from './objects/effects.js';
 import { createAudio } from './systems/audio.js';
 import { createFire } from './systems/fire.js';
+import { loadVillagers } from './objects/villagers.js';
 
 const $canvas = document.getElementById('webgl');
 let renderer, camera, scene, controls;
@@ -30,7 +31,8 @@ const dayCycle = createDayCycle(13);
 const sunColor = new THREE.Color();
 const timer = new THREE.Timer();
 const mouse = new THREE.Vector2(0.3, 0.5);
-let physics, waterHeight, breakables, scenery, effects, fire;
+let physics, waterHeight, breakables, scenery, effects, fire, villagers;
+const houseSpots = [];
 const audio = createAudio();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -115,6 +117,7 @@ const init = async () => {
     house.rotation.y = rotation;
     scene.add(house);
     breakables.addHouse(house);
+    houseSpots.push(new THREE.Vector2(px, pz));
   });
 
   let windmillBase = Infinity;
@@ -127,6 +130,7 @@ const init = async () => {
   breakables.addWindmill(windmill, blades);
 
   scenery = await loadScenery(scene, breakables);
+  villagers = await loadVillagers(scene, houseSpots);
 
   physics.onCollision((handle1, handle2) => {
     const item = physics.itemByCollider.get(handle1) || physics.itemByCollider.get(handle2);
@@ -396,6 +400,7 @@ const draw = () => {
   updateWindmill(deltaTime, weather.wind);
   effects.update(deltaTime);
   fire.update(deltaTime, timer.getElapsed(), weather.rain, wind);
+  villagers.update(deltaTime);
   audio.setFire(fire.getLevel());
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
