@@ -163,6 +163,7 @@ export const createBreakables = (physics, scene) => {
       piece.carried = false;
       piece.returning = null;
       if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
+      piece.collider.setEnabled(true);
       piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
     });
     house.repairing = false;
@@ -202,6 +203,7 @@ export const createBreakables = (physics, scene) => {
     const piece = pieceByCollider.get(handle1) || pieceByCollider.get(handle2);
     const item = physics.itemByCollider.get(handle1) || physics.itemByCollider.get(handle2);
     if (!piece || !item || item.rewind) return;
+    if (piece.broken) return;
     const velocity = item.velocityBefore || item.body.linvel();
     const speed = Math.hypot(velocity.x, velocity.y, velocity.z);
     if (speed * item.power < BREAK_FORCE * piece.house.toughness) return;
@@ -220,6 +222,7 @@ export const createBreakables = (physics, scene) => {
         piece.returning = null;
         piece.claimedBy = null;
         if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
+        piece.collider.setEnabled(true);
         piece.from.position.copy(piece.mesh.position);
         piece.from.quaternion.copy(piece.mesh.quaternion);
         piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
@@ -296,6 +299,7 @@ export const createBreakables = (physics, scene) => {
       piece.carried = false;
       piece.returning = null;
       if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
+      piece.collider.setEnabled(true);
     });
     const middle = new THREE.Vector3();
     house.pieces.forEach((piece) => middle.add(piece.mesh.position));
@@ -316,6 +320,7 @@ export const createBreakables = (physics, scene) => {
 
   const finishPiece = (piece) => {
     setSize(piece, 1);
+    piece.collider.setEnabled(true);
     piece.body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
     piece.body.setTranslation(piece.home.position, true);
     piece.body.setRotation(piece.home.quaternion, true);
@@ -345,6 +350,7 @@ export const createBreakables = (physics, scene) => {
     piece.carried = false;
     piece.from.position.copy(piece.mesh.position);
     piece.from.quaternion.copy(piece.mesh.quaternion);
+    piece.collider.setEnabled(false);
     piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
     piece.returning = { start: now, duration, size: piece.baseScale ? piece.mesh.scale.x / piece.baseScale.x : 1 };
   };
@@ -352,6 +358,7 @@ export const createBreakables = (physics, scene) => {
   const takePiece = (piece) => {
     piece.carried = true;
     setSize(piece, CARRY_SIZE);
+    piece.collider.setEnabled(false);
     piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
   };
 
@@ -364,6 +371,7 @@ export const createBreakables = (physics, scene) => {
     piece.carried = false;
     piece.claimedBy = null;
     setSize(piece, 1);
+    piece.collider.setEnabled(true);
     if (piece.broken && !piece.returning) piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
   };
 

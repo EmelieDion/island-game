@@ -190,7 +190,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
   const isReachable = (piece) => {
     const { x, y, z } = piece.mesh.position;
     const ground = terrainHeight(x, z);
-    return ground > 0.5 && y < ground + 0.9 && Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 6.5;
+    return ground > 0.15 && y < ground + 1.6 && Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 8;
   };
 
   const isResting = (piece) => {
