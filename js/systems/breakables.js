@@ -376,7 +376,7 @@ export const createBreakables = (physics, scene) => {
   };
 
   const housesToRebuild = () => houses.filter((house) => house.manual && !house.repairing && !house.fast
-    && now - house.lastHit > 2 && house.pieces.some((piece) => piece.broken));
+    && now - house.lastHit > 1 && house.pieces.some((piece) => piece.broken));
 
   const rewind = () => {
     houses.forEach((house) => {

@@ -3,16 +3,17 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone } from 'three/addons/utils/SkeletonUtils.js';
 import { terrainHeight, VILLAGE } from './island.js';
 
-const COUNT = 6;
+const COUNT = 10;
 const HEIGHT = 0.55;
 const WALK_SPEED = 0.55;
 const RUN_SPEED = 1.8;
 const FLEE_TIME = 2.6;
 const DOWN_TIME = 2.6;
 const HOUSE_SPACE = 1.05;
-const CARRY_SPEED = 0.45;
-const PICKUP_TIME = 0.7;
-const PLACE_TIME = 0.8;
+const FETCH_SPEED = 1.5;
+const CARRY_SPEED = 1.1;
+const PICKUP_TIME = 0.35;
+const PLACE_TIME = 0.4;
 const WAVE_TIME = 2.2;
 const JOB_TIME = 25;
 
@@ -83,10 +84,13 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
     villagers.push({ root, mixer, actions, current: 'idle', state: 'wander', target: null, wait: Math.random() * 3, timer: 0, rising: false, job: null });
   }
 
-  const play = (villager, name, fade = 0.25) => {
-    if (villager.current === name) return;
+  const play = (villager, name, fade = 0.25, speed = 1) => {
+    if (villager.current === name) {
+      villager.actions[name].timeScale = speed;
+      return;
+    }
     const action = villager.actions[name].reset();
-    action.timeScale = 1;
+    action.timeScale = speed;
     action.fadeIn(fade).play();
     villager.actions[villager.current].fadeOut(fade);
     villager.current = name;
@@ -190,7 +194,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
   const isReachable = (piece) => {
     const { x, y, z } = piece.mesh.position;
     const ground = terrainHeight(x, z);
-    return ground > 0.15 && y < ground + 1.6 && Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 8;
+    return ground > 0.15 && y > ground - 0.5 && Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 8;
   };
 
   const isResting = (piece) => {
@@ -217,7 +221,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
       houses.forEach((house) => {
         house.pieces.forEach((piece) => {
           if (!piece.broken || piece.carried || piece.returning || piece.claimedBy || !isResting(piece)) return;
-          const score = piece.home.position.y * 2 + piece.mesh.position.distanceTo(position) * 0.3;
+          const score = piece.home.position.y * 1.5 + piece.mesh.position.distanceTo(position) * 0.6;
           if (!best || score < best.score) best = { piece, house, score };
         });
       });
@@ -225,7 +229,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
       best.piece.claimedBy = villager;
       villager.job = { piece: best.piece, house: best.house, phase: 'fetch', timer: 0, start: clock };
       villager.state = 'work';
-      play(villager, 'walk');
+      play(villager, 'run', 0.2, 0.85);
     });
   };
 
@@ -269,11 +273,11 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
         job.phase = 'pickup';
         job.timer = PICKUP_TIME;
         turnTowards(villager, Math.atan2(target.x, target.y), 1);
-        play(villager, 'interact', 0.15);
+        play(villager, 'interact', 0.1, 2);
         return;
       }
       villager.target = new THREE.Vector2(piece.mesh.position.x, piece.mesh.position.z).sub(target.normalize().multiplyScalar(0.25));
-      moveTowards(villager, WALK_SPEED, deltaTime);
+      moveTowards(villager, FETCH_SPEED, deltaTime);
       return;
     }
 
@@ -290,7 +294,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
       villager.target = new THREE.Vector2(center.x + away.x, center.z + away.y);
       job.center = center;
       job.phase = 'carry';
-      play(villager, 'walk');
+      play(villager, 'walk', 0.15, 1.8);
       return;
     }
 
@@ -302,7 +306,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
       turnTowards(villager, Math.atan2(job.center.x - position.x, job.center.z - position.z), 1);
       job.phase = 'place';
       job.timer = PLACE_TIME;
-      play(villager, 'interact', 0.15);
+      play(villager, 'interact', 0.1, 2);
       return;
     }
 
@@ -310,7 +314,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
       holdPiece(villager);
       job.timer -= deltaTime;
       if (job.timer > PLACE_TIME * 0.4) return;
-      breakables.sendHome(piece, 0.9);
+      breakables.sendHome(piece, 0.45);
       piece.claimedBy = null;
       const others = house.pieces.filter((other) => other.broken && other !== piece && !other.returning);
       if (others.length) {
@@ -334,7 +338,7 @@ export const loadVillagers = async (scene, houses, { breakables, isBurning = () 
     clock += deltaTime;
     jobTimer -= deltaTime;
     if (jobTimer <= 0) {
-      jobTimer = 0.5;
+      jobTimer = 0.25;
       assignJobs();
     }
 
