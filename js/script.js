@@ -18,6 +18,7 @@ import { loadScenery } from './objects/scenery.js';
 import { createEffects } from './objects/effects.js';
 import { createAudio } from './systems/audio.js';
 import { createFire } from './systems/fire.js';
+import { loadVillagers } from './objects/villagers.js';
 
 const $canvas = document.getElementById('webgl');
 let renderer, camera, scene, controls;
@@ -30,7 +31,8 @@ const dayCycle = createDayCycle(13);
 const sunColor = new THREE.Color();
 const timer = new THREE.Timer();
 const mouse = new THREE.Vector2(0.3, 0.5);
-let physics, waterHeight, breakables, scenery, effects, fire;
+let physics, waterHeight, breakables, scenery, effects, fire, villagers;
+const houseSpots = [];
 const audio = createAudio();
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -57,6 +59,7 @@ const init = async () => {
   controls.target.set(0, 1, 0);
   controls.maxDistance = 85;
   controls.minDistance = 5;
+  controls.maxPolarAngle = Math.PI * 0.44;
 
   const { mesh, update, getHeight } = createSea();
   seaMesh = mesh;
@@ -70,7 +73,10 @@ const init = async () => {
   physics = await createPhysics(terrain);
   breakables = createBreakables(physics, scene);
   effects = createEffects(scene);
-  fire = createFire(scene, breakables, { onDouse: () => audio.hiss() });
+  fire = createFire(scene, breakables, {
+    onDouse: () => audio.hiss(),
+    onIgnite: (position) => villagers && villagers.scare(position, 4),
+  });
 
   rain = createRain();
   scene.add(rain.mesh);
@@ -115,6 +121,7 @@ const init = async () => {
     house.rotation.y = rotation;
     scene.add(house);
     breakables.addHouse(house);
+    houseSpots.push(new THREE.Vector2(px, pz));
   });
 
   let windmillBase = Infinity;
@@ -127,6 +134,7 @@ const init = async () => {
   breakables.addWindmill(windmill, blades);
 
   scenery = await loadScenery(scene, breakables);
+  villagers = await loadVillagers(scene, houseSpots, { breakables, isBurning: (house) => fire.isBurning(house) });
 
   physics.onCollision((handle1, handle2) => {
     const item = physics.itemByCollider.get(handle1) || physics.itemByCollider.get(handle2);
@@ -134,6 +142,7 @@ const init = async () => {
     const { x, y, z } = item.velocityBefore;
     const speed = Math.hypot(x, y, z);
     if (speed > 3) audio.thud(speed * item.power);
+    if (speed > 5) villagers.scare(item.body.translation(), 3);
   });
 
   const $time = document.getElementById('time');
@@ -283,6 +292,19 @@ const throwProjectile = (e) => {
   if (physics.items.length > MAX_PROJECTILES) physics.remove(physics.items[0]);
 };
 
+const keepCameraOutside = () => {
+  const target = controls.target;
+  const reach = Math.hypot(target.x, target.z);
+  if (reach > 14) {
+    target.x *= 14 / reach;
+    target.z *= 14 / reach;
+  }
+  target.y = THREE.MathUtils.clamp(target.y, 0, 4);
+  const { x, z } = camera.position;
+  const floor = Math.max(terrainHeight(x, z), waterHeight(x, z)) + 1;
+  if (camera.position.y < floor) camera.position.y = floor;
+};
+
 const pullLever = () => {
   const $lever = document.getElementById('lever');
   if ($lever.classList.contains('is-pulled')) return;
@@ -303,6 +325,8 @@ const findTarget = () => {
 const strikeLightning = (point) => {
   effects.strike(point);
   audio.thunder();
+  villagers.knockDownNear(point, 1.2);
+  villagers.scare(point, 5);
   const away = (position) => new THREE.Vector3(position.x - point.x, 0, position.z - point.z).normalize().multiplyScalar(4).add(new THREE.Vector3(0, 5, 0));
   const target = breakables.findNearest(point, 2.5);
   if (target) {
@@ -316,6 +340,7 @@ const blowGust = (point) => {
   const direction = new THREE.Vector3(point.x - camera.position.x, 0, point.z - camera.position.z).normalize();
   effects.blow(point, direction);
   fire.spread(point, direction, timer.getElapsed());
+  villagers.scare(point, 3.5);
   audio.whoosh(1);
   const along = () => direction.clone().multiplyScalar(10).add(new THREE.Vector3(0, 3, 0));
   breakables.blast(point, 3, along, 0.8, true);
@@ -396,10 +421,12 @@ const draw = () => {
   updateWindmill(deltaTime, weather.wind);
   effects.update(deltaTime);
   fire.update(deltaTime, timer.getElapsed(), weather.rain, wind);
+  villagers.update(deltaTime, physics.items);
   audio.setFire(fire.getLevel());
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
   controls.update();
+  keepCameraOutside();
   renderer.render(scene, camera);
 };
 
