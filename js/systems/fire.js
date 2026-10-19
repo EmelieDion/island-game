@@ -27,7 +27,7 @@ const box = new THREE.Box3();
 const top = new THREE.Vector3();
 const size = new THREE.Vector3();
 
-export const createFire = (scene, breakables, { onDouse = () => {} } = {}) => {
+export const createFire = (scene, breakables, { onDouse = () => {}, onIgnite = () => {} } = {}) => {
   const fires = [];
   const scars = [];
 
@@ -56,6 +56,7 @@ export const createFire = (scene, breakables, { onDouse = () => {} } = {}) => {
     }
 
     scene.add(group);
+    onIgnite(centerOf(record));
     fires.push({ record, group, flames, smoke, smokeMaterial, start: now, collapsedAt: null, dousedAt: null, water: 0, nextSpread: 4, strength: 0, char: 0 });
   };
 

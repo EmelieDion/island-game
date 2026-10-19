@@ -72,7 +72,10 @@ const init = async () => {
   physics = await createPhysics(terrain);
   breakables = createBreakables(physics, scene);
   effects = createEffects(scene);
-  fire = createFire(scene, breakables, { onDouse: () => audio.hiss() });
+  fire = createFire(scene, breakables, {
+    onDouse: () => audio.hiss(),
+    onIgnite: (position) => villagers && villagers.scare(position, 4),
+  });
 
   rain = createRain();
   scene.add(rain.mesh);
@@ -138,6 +141,7 @@ const init = async () => {
     const { x, y, z } = item.velocityBefore;
     const speed = Math.hypot(x, y, z);
     if (speed > 3) audio.thud(speed * item.power);
+    if (speed > 5) villagers.scare(item.body.translation(), 3);
   });
 
   const $time = document.getElementById('time');
@@ -307,6 +311,8 @@ const findTarget = () => {
 const strikeLightning = (point) => {
   effects.strike(point);
   audio.thunder();
+  villagers.knockDownNear(point, 1.2);
+  villagers.scare(point, 5);
   const away = (position) => new THREE.Vector3(position.x - point.x, 0, position.z - point.z).normalize().multiplyScalar(4).add(new THREE.Vector3(0, 5, 0));
   const target = breakables.findNearest(point, 2.5);
   if (target) {
@@ -320,6 +326,7 @@ const blowGust = (point) => {
   const direction = new THREE.Vector3(point.x - camera.position.x, 0, point.z - camera.position.z).normalize();
   effects.blow(point, direction);
   fire.spread(point, direction, timer.getElapsed());
+  villagers.scare(point, 3.5);
   audio.whoosh(1);
   const along = () => direction.clone().multiplyScalar(10).add(new THREE.Vector3(0, 3, 0));
   breakables.blast(point, 3, along, 0.8, true);
@@ -400,7 +407,7 @@ const draw = () => {
   updateWindmill(deltaTime, weather.wind);
   effects.update(deltaTime);
   fire.update(deltaTime, timer.getElapsed(), weather.rain, wind);
-  villagers.update(deltaTime);
+  villagers.update(deltaTime, physics.items);
   audio.setFire(fire.getLevel());
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
