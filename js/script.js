@@ -133,7 +133,7 @@ const init = async () => {
   breakables.addWindmill(windmill, blades);
 
   scenery = await loadScenery(scene, breakables);
-  villagers = await loadVillagers(scene, houseSpots);
+  villagers = await loadVillagers(scene, houseSpots, { breakables, isBurning: (house) => fire.isBurning(house) });
 
   physics.onCollision((handle1, handle2) => {
     const item = physics.itemByCollider.get(handle1) || physics.itemByCollider.get(handle2);

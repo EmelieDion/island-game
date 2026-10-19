@@ -10,6 +10,11 @@ const RUN_SPEED = 1.8;
 const FLEE_TIME = 2.6;
 const DOWN_TIME = 2.6;
 const HOUSE_SPACE = 1.05;
+const CARRY_SPEED = 0.45;
+const PICKUP_TIME = 0.7;
+const PLACE_TIME = 0.8;
+const WAVE_TIME = 2.2;
+const JOB_TIME = 25;
 
 const findClip = (clips, name) => clips.find((clip) => clip.name.endsWith(`|${name}`));
 
@@ -37,7 +42,7 @@ const isClearPath = (from, to, houses) => {
   return true;
 };
 
-export const loadVillagers = async (scene, houses) => {
+export const loadVillagers = async (scene, houses, { breakables, isBurning = () => false } = {}) => {
   const loader = new GLTFLoader();
   const models = await Promise.all(['assets/worker.glb', 'assets/farmer.glb'].map((url) => loader.loadAsync(url)));
   const streets = findStreets(houses);
@@ -64,6 +69,8 @@ export const loadVillagers = async (scene, houses) => {
       walk: mixer.clipAction(findClip(model.animations, 'Walk')),
       run: mixer.clipAction(findClip(model.animations, 'Run')),
       fall: mixer.clipAction(findClip(model.animations, 'Death')),
+      interact: mixer.clipAction(findClip(model.animations, 'Interact')),
+      wave: mixer.clipAction(findClip(model.animations, 'Wave')),
     };
     actions.fall.setLoop(THREE.LoopOnce, 1);
     actions.fall.clampWhenFinished = true;
@@ -73,7 +80,7 @@ export const loadVillagers = async (scene, houses) => {
     root.position.set(start.x, terrainHeight(start.x, start.y), start.y);
     root.rotation.y = Math.random() * Math.PI * 2;
 
-    villagers.push({ root, mixer, actions, current: 'idle', state: 'wander', target: null, wait: Math.random() * 3, timer: 0, rising: false });
+    villagers.push({ root, mixer, actions, current: 'idle', state: 'wander', target: null, wait: Math.random() * 3, timer: 0, rising: false, job: null });
   }
 
   const play = (villager, name, fade = 0.25) => {
@@ -87,6 +94,16 @@ export const loadVillagers = async (scene, houses) => {
 
   const here = (villager) => new THREE.Vector2(villager.root.position.x, villager.root.position.z);
 
+  const stopJob = (villager) => {
+    const job = villager.job;
+    if (!job) return;
+    villager.job = null;
+    if (job.piece.claimedBy === villager) {
+      if (job.piece.carried) breakables.dropPiece(job.piece);
+      job.piece.claimedBy = null;
+    }
+  };
+
   const scare = (point, radius) => {
     const danger = new THREE.Vector2(point.x, point.z);
     villagers.forEach((villager) => {
@@ -97,6 +114,7 @@ export const loadVillagers = async (scene, houses) => {
       options.sort((a, b) => b.distanceTo(danger) - a.distanceTo(danger));
       const safe = options.slice(0, 6).find((spot) => isClearPath(position, spot, houses)) || options[0];
       if (!safe) return;
+      stopJob(villager);
       villager.state = 'flee';
       villager.target = safe;
       villager.timer = FLEE_TIME;
@@ -105,6 +123,7 @@ export const loadVillagers = async (scene, houses) => {
   };
 
   const knockDown = (villager) => {
+    stopJob(villager);
     villager.state = 'down';
     villager.target = null;
     villager.timer = DOWN_TIME;
@@ -162,8 +181,162 @@ export const loadVillagers = async (scene, houses) => {
     villager.root.rotation.y += difference * Math.min(1, deltaTime * 8);
   };
 
+  const houseCenter = (house) => {
+    const center = new THREE.Vector3();
+    house.pieces.forEach((piece) => center.add(piece.home.position));
+    return center.divideScalar(house.pieces.length);
+  };
+
+  const isReachable = (piece) => {
+    const { x, y, z } = piece.mesh.position;
+    const ground = terrainHeight(x, z);
+    return ground > 0.5 && y < ground + 0.9 && Math.hypot(x - VILLAGE.x, z - VILLAGE.y) < 6.5;
+  };
+
+  const isResting = (piece) => {
+    const velocity = piece.body.linvel();
+    return Math.hypot(velocity.x, velocity.y, velocity.z) < 0.6;
+  };
+
+  let jobTimer = 0;
+  let clock = 0;
+
+  const assignJobs = () => {
+    if (!breakables) return;
+    const houses = breakables.housesToRebuild().filter((house) => !isBurning(house));
+    houses.forEach((house) => {
+      house.pieces.forEach((piece) => {
+        if (piece.broken && !piece.carried && !piece.returning && !piece.claimedBy && !isReachable(piece)) breakables.sendHome(piece);
+      });
+    });
+
+    villagers.forEach((villager) => {
+      if (villager.state !== 'wander' || villager.job) return;
+      const position = villager.root.position;
+      let best = null;
+      houses.forEach((house) => {
+        house.pieces.forEach((piece) => {
+          if (!piece.broken || piece.carried || piece.returning || piece.claimedBy || !isResting(piece)) return;
+          const score = piece.home.position.y * 2 + piece.mesh.position.distanceTo(position) * 0.3;
+          if (!best || score < best.score) best = { piece, house, score };
+        });
+      });
+      if (!best) return;
+      best.piece.claimedBy = villager;
+      villager.job = { piece: best.piece, house: best.house, phase: 'fetch', timer: 0, start: clock };
+      villager.state = 'work';
+      play(villager, 'walk');
+    });
+  };
+
+  const carryPoint = new THREE.Vector3();
+
+  const holdPiece = (villager) => {
+    const position = villager.root.position;
+    carryPoint.set(position.x, position.y + HEIGHT + 0.12, position.z);
+    breakables.carryPiece(villager.job.piece, carryPoint);
+  };
+
+  const finishWork = (villager, wait) => {
+    villager.job = null;
+    villager.state = 'wander';
+    villager.target = null;
+    villager.wait = wait;
+    play(villager, 'idle');
+  };
+
+  const work = (villager, deltaTime) => {
+    const job = villager.job;
+    if (!job) {
+      finishWork(villager, 0.5);
+      return;
+    }
+    const { piece, house } = job;
+    const lost = piece.claimedBy !== villager || !piece.broken || house.fast || house.repairing || isBurning(house)
+      || clock - job.start > JOB_TIME || ((job.phase === 'carry' || job.phase === 'place') && !piece.carried);
+    if (lost && job.phase !== 'wave') {
+      stopJob(villager);
+      finishWork(villager, 0.5);
+      return;
+    }
+
+    if (job.phase === 'fetch') {
+      const position = villager.root.position;
+      const target = new THREE.Vector2(piece.mesh.position.x - position.x, piece.mesh.position.z - position.z);
+      const distance = target.length();
+      if (!isResting(piece)) return;
+      if (distance < 0.4) {
+        job.phase = 'pickup';
+        job.timer = PICKUP_TIME;
+        turnTowards(villager, Math.atan2(target.x, target.y), 1);
+        play(villager, 'interact', 0.15);
+        return;
+      }
+      villager.target = new THREE.Vector2(piece.mesh.position.x, piece.mesh.position.z).sub(target.normalize().multiplyScalar(0.25));
+      moveTowards(villager, WALK_SPEED, deltaTime);
+      return;
+    }
+
+    if (job.phase === 'pickup') {
+      job.timer -= deltaTime;
+      if (job.timer > 0) return;
+      breakables.takePiece(piece);
+      holdPiece(villager);
+      const center = houseCenter(house);
+      const position = villager.root.position;
+      const away = new THREE.Vector2(position.x - center.x, position.z - center.z);
+      if (away.lengthSq() < 0.01) away.set(1, 0);
+      away.normalize().rotateAround(new THREE.Vector2(), (Math.random() - 0.5) * 1.2).multiplyScalar(HOUSE_SPACE * 0.85);
+      villager.target = new THREE.Vector2(center.x + away.x, center.z + away.y);
+      job.center = center;
+      job.phase = 'carry';
+      play(villager, 'walk');
+      return;
+    }
+
+    if (job.phase === 'carry') {
+      const arrived = moveTowards(villager, CARRY_SPEED, deltaTime);
+      holdPiece(villager);
+      if (!arrived) return;
+      const position = villager.root.position;
+      turnTowards(villager, Math.atan2(job.center.x - position.x, job.center.z - position.z), 1);
+      job.phase = 'place';
+      job.timer = PLACE_TIME;
+      play(villager, 'interact', 0.15);
+      return;
+    }
+
+    if (job.phase === 'place') {
+      holdPiece(villager);
+      job.timer -= deltaTime;
+      if (job.timer > PLACE_TIME * 0.4) return;
+      breakables.sendHome(piece, 0.9);
+      piece.claimedBy = null;
+      const others = house.pieces.filter((other) => other.broken && other !== piece && !other.returning);
+      if (others.length) {
+        finishWork(villager, 0.2);
+        return;
+      }
+      job.phase = 'wave';
+      job.timer = WAVE_TIME;
+      play(villager, 'wave', 0.2);
+      return;
+    }
+
+    if (job.phase === 'wave') {
+      job.timer -= deltaTime;
+      if (job.timer <= 0) finishWork(villager, 1);
+    }
+  };
+
   const update = (deltaTime, items = []) => {
     checkHits(items);
+    clock += deltaTime;
+    jobTimer -= deltaTime;
+    if (jobTimer <= 0) {
+      jobTimer = 0.5;
+      assignJobs();
+    }
 
     villagers.forEach((villager) => {
       villager.mixer.update(deltaTime);
@@ -180,6 +353,11 @@ export const loadVillagers = async (scene, houses) => {
           villager.wait = 0.5;
           play(villager, 'idle', 0.3);
         }
+        return;
+      }
+
+      if (villager.state === 'work') {
+        work(villager, deltaTime);
         return;
       }
 

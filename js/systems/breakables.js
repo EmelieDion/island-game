@@ -2,6 +2,7 @@ import * as THREE from 'three/webgpu';
 
 const BREAK_FORCE = 4;
 const REPAIR_DELAY = 6;
+const CARRY_SIZE = 0.5;
 const PIECE_REPAIR_TIME = 1.2;
 const PIECE_REPAIR_GAP = 0.15;
 const FAST_REPAIR_TIME = 0.7;
@@ -61,6 +62,7 @@ export const createBreakables = (physics, scene) => {
     });
 
     const record = createRecord(1);
+    record.manual = true;
     meshes.forEach((mesh) => {
       mesh.matrixWorld.decompose(position, quaternion, scale);
       mesh.geometry.computeBoundingBox();
@@ -157,12 +159,13 @@ export const createBreakables = (physics, scene) => {
   };
 
   const breakAround = (house, hitPiece, velocity, power) => {
-    if (house.repairing) {
-      house.pieces.filter((piece) => piece.broken).forEach((piece) => {
-        piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
-      });
-      house.repairing = false;
-    }
+    house.pieces.filter((piece) => piece.broken && (house.repairing || piece.carried || piece.returning)).forEach((piece) => {
+      piece.carried = false;
+      piece.returning = null;
+      if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
+      piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+    });
+    house.repairing = false;
     house.lastHit = now;
 
     const toBreak = new Set([hitPiece]);
@@ -209,10 +212,14 @@ export const createBreakables = (physics, scene) => {
     const broken = house.pieces.filter((piece) => piece.broken);
     if (!broken.length) return;
 
-    if (!house.repairing && (house.fast || now - house.lastHit > REPAIR_DELAY)) {
+    if (!house.repairing && (house.fast || (!house.manual && now - house.lastHit > REPAIR_DELAY))) {
       house.repairing = true;
       house.repairStart = now;
       broken.forEach((piece) => {
+        piece.carried = false;
+        piece.returning = null;
+        piece.claimedBy = null;
+        if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
         piece.from.position.copy(piece.mesh.position);
         piece.from.quaternion.copy(piece.mesh.quaternion);
         piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
@@ -285,6 +292,11 @@ export const createBreakables = (physics, scene) => {
   const collapse = (house) => {
     house.lastHit = now;
     house.repairing = false;
+    house.pieces.forEach((piece) => {
+      piece.carried = false;
+      piece.returning = null;
+      if (piece.baseScale) piece.mesh.scale.copy(piece.baseScale);
+    });
     const middle = new THREE.Vector3();
     house.pieces.forEach((piece) => middle.add(piece.mesh.position));
     middle.divideScalar(house.pieces.length);
@@ -296,6 +308,67 @@ export const createBreakables = (physics, scene) => {
       piece.body.setAngvel({ x: (Math.random() - 0.5) * 4, y: 0, z: (Math.random() - 0.5) * 4 }, true);
     });
   };
+
+  const setSize = (piece, size) => {
+    if (!piece.baseScale) piece.baseScale = piece.mesh.scale.clone();
+    piece.mesh.scale.copy(piece.baseScale).multiplyScalar(size);
+  };
+
+  const finishPiece = (piece) => {
+    setSize(piece, 1);
+    piece.body.setBodyType(RAPIER.RigidBodyType.Fixed, true);
+    piece.body.setTranslation(piece.home.position, true);
+    piece.body.setRotation(piece.home.quaternion, true);
+    piece.mesh.position.copy(piece.home.position);
+    piece.mesh.quaternion.copy(piece.home.quaternion);
+    piece.broken = false;
+    piece.carried = false;
+    piece.returning = null;
+    piece.claimedBy = null;
+    const house = piece.house;
+    if (!house.pieces.some((other) => other.broken) && house.onRepaired) house.onRepaired(house);
+  };
+
+  const returnStep = (piece) => {
+    const { start, duration } = piece.returning;
+    const t = THREE.MathUtils.clamp((now - start) / duration, 0, 1);
+    const eased = t * t * (3 - 2 * t);
+    position.lerpVectors(piece.from.position, piece.home.position, eased);
+    quaternion.slerpQuaternions(piece.from.quaternion, piece.home.quaternion, eased);
+    piece.body.setNextKinematicTranslation(position);
+    piece.body.setNextKinematicRotation(quaternion);
+    setSize(piece, THREE.MathUtils.lerp(piece.returning.size, 1, eased));
+    if (t >= 1) finishPiece(piece);
+  };
+
+  const sendHome = (piece, duration = 1.2) => {
+    piece.carried = false;
+    piece.from.position.copy(piece.mesh.position);
+    piece.from.quaternion.copy(piece.mesh.quaternion);
+    piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+    piece.returning = { start: now, duration, size: piece.baseScale ? piece.mesh.scale.x / piece.baseScale.x : 1 };
+  };
+
+  const takePiece = (piece) => {
+    piece.carried = true;
+    setSize(piece, CARRY_SIZE);
+    piece.body.setBodyType(RAPIER.RigidBodyType.KinematicPositionBased, true);
+  };
+
+  const carryPiece = (piece, target) => {
+    piece.body.setNextKinematicTranslation(target);
+    piece.body.setNextKinematicRotation(piece.home.quaternion);
+  };
+
+  const dropPiece = (piece) => {
+    piece.carried = false;
+    piece.claimedBy = null;
+    setSize(piece, 1);
+    if (piece.broken && !piece.returning) piece.body.setBodyType(RAPIER.RigidBodyType.Dynamic, true);
+  };
+
+  const housesToRebuild = () => houses.filter((house) => house.manual && !house.repairing && !house.fast
+    && now - house.lastHit > 2 && house.pieces.some((piece) => piece.broken));
 
   const rewind = () => {
     houses.forEach((house) => {
@@ -319,6 +392,8 @@ export const createBreakables = (physics, scene) => {
           return;
         }
         if (!piece.broken) return;
+        if (piece.returning) returnStep(piece);
+        if (!piece.broken) return;
         const translation = piece.body.translation();
         piece.mesh.position.set(translation.x, translation.y, translation.z);
         piece.mesh.quaternion.copy(piece.body.rotation());
@@ -326,5 +401,5 @@ export const createBreakables = (physics, scene) => {
     });
   };
 
-  return { records: houses, addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update };
+  return { records: houses, addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update, housesToRebuild, sendHome, takePiece, carryPiece, dropPiece };
 };
