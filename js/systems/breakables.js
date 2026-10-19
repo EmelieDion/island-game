@@ -326,5 +326,5 @@ export const createBreakables = (physics, scene) => {
     });
   };
 
-  return { addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update };
+  return { records: houses, addHouse, addTree, addWindmill, addBoat, addStatic, blast, findNearest, collapse, rewind, update };
 };

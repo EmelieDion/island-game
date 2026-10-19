@@ -70,7 +70,7 @@ const init = async () => {
   physics = await createPhysics(terrain);
   breakables = createBreakables(physics, scene);
   effects = createEffects(scene);
-  fire = createFire(scene, breakables);
+  fire = createFire(scene, breakables, { onDouse: () => audio.hiss() });
 
   rain = createRain();
   scene.add(rain.mesh);
@@ -315,6 +315,7 @@ const strikeLightning = (point) => {
 const blowGust = (point) => {
   const direction = new THREE.Vector3(point.x - camera.position.x, 0, point.z - camera.position.z).normalize();
   effects.blow(point, direction);
+  fire.spread(point, direction, timer.getElapsed());
   audio.whoosh(1);
   const along = () => direction.clone().multiplyScalar(10).add(new THREE.Vector3(0, 3, 0));
   breakables.blast(point, 3, along, 0.8, true);
@@ -394,7 +395,8 @@ const draw = () => {
   scenery.update(timer.getElapsed(), waterHeight);
   updateWindmill(deltaTime, weather.wind);
   effects.update(deltaTime);
-  fire.update(deltaTime, timer.getElapsed());
+  fire.update(deltaTime, timer.getElapsed(), weather.rain, wind);
+  audio.setFire(fire.getLevel());
   audio.update(weather.rain, weather.wind, timer.getElapsed());
 
   controls.update();

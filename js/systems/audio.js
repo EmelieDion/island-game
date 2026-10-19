@@ -6,6 +6,8 @@ export const createAudio = () => {
   let windGain = null;
   let windFilter = null;
   let wavesGain = null;
+  let fireGain = null;
+  let fireLevel = 0;
   let muted = false;
   let lastThud = 0;
 
@@ -44,6 +46,7 @@ export const createAudio = () => {
     const wind = loop('bandpass', 500, 1.2);
     windGain = wind.gain;
     windFilter = wind.filter;
+    fireGain = loop('bandpass', 1100, 0.8).gain;
   };
 
   const burst = ({ type, from, to = from, duration, volume, q = 1, delay = 0 }) => {
@@ -103,9 +106,21 @@ export const createAudio = () => {
     burst({ type: 'bandpass', from: 2000, to: 300, duration: 0.9, volume: 0.2, q: 2 });
   };
 
+  const hiss = () => {
+    burst({ type: 'highpass', from: 3000, to: 6000, duration: 2.2, volume: 0.35 });
+  };
+
+  const setFire = (level) => {
+    fireLevel = level;
+  };
+
   const update = (rain, wind, elapsedTime) => {
     if (!context) return;
     const now = context.currentTime;
+    fireGain.gain.setTargetAtTime(fireLevel * (0.08 + Math.random() * 0.22), now, 0.015);
+    if (fireLevel > 0.05 && Math.random() < fireLevel * 0.08) {
+      burst({ type: 'highpass', from: 2500, duration: 0.04 + Math.random() * 0.05, volume: 0.1 + fireLevel * 0.15 });
+    }
     const swell = 0.08 + Math.sin(elapsedTime * 0.7) * 0.03 + wind * 0.08;
     wavesGain.gain.setTargetAtTime(swell, now, 0.3);
     rainGain.gain.setTargetAtTime(rain * 0.25, now, 0.3);
@@ -119,5 +134,5 @@ export const createAudio = () => {
     return muted;
   };
 
-  return { start, thunder, whoosh, thud, rewind, update, toggleMute };
+  return { start, thunder, whoosh, thud, rewind, hiss, setFire, update, toggleMute };
 };

@@ -5,6 +5,8 @@ import fireShader from '../shaders/fire/fragment.wgsl?raw';
 
 const BURN_TIME = 7;
 const AFTER_COLLAPSE = 2.5;
+const DOUSE_TIME = 2.5;
+const SPREAD_DISTANCE = 4;
 const FLAME_COUNT = 9;
 const FLAME_HEIGHT = 0.9;
 const SMOKE_COUNT = 9;
@@ -25,8 +27,9 @@ const box = new THREE.Box3();
 const top = new THREE.Vector3();
 const size = new THREE.Vector3();
 
-export const createFire = (scene, breakables) => {
+export const createFire = (scene, breakables, { onDouse = () => {} } = {}) => {
   const fires = [];
+  const scars = [];
 
   const ignite = (record, now) => {
     if (fires.some((fire) => fire.record === record)) return;
@@ -53,7 +56,7 @@ export const createFire = (scene, breakables) => {
     }
 
     scene.add(group);
-    fires.push({ record, group, flames, smoke, smokeMaterial, start: now, collapsedAt: null, strength: 0 });
+    fires.push({ record, group, flames, smoke, smokeMaterial, start: now, collapsedAt: null, dousedAt: null, water: 0, nextSpread: 4, strength: 0, char: 0 });
   };
 
   const findTop = (record) => {
@@ -77,16 +80,74 @@ export const createFire = (scene, breakables) => {
     fires.splice(fires.indexOf(fire), 1);
   };
 
-  const update = (deltaTime, now) => {
+  const centerOf = (record) => {
+    const center = new THREE.Vector3();
+    record.pieces.forEach((piece) => center.add(piece.home.position));
+    return center.divideScalar(record.pieces.length);
+  };
+
+  const neighbourInDirection = (record, direction) => {
+    const from = centerOf(record);
+    let best = null;
+    let bestDistance = SPREAD_DISTANCE;
+    breakables.records.forEach((other) => {
+      if (other === record || isBurning(other)) return;
+      const offset = centerOf(other).sub(from).setY(0);
+      const distance = offset.length();
+      if (distance > bestDistance || distance < 0.1) return;
+      if (direction && offset.normalize().dot(direction) < 0.3) return;
+      best = other;
+      bestDistance = distance;
+    });
+    return best;
+  };
+
+  const spread = (point, direction, now) => {
+    fires.forEach((fire) => {
+      if (fire.dousedAt !== null || fire.collapsedAt !== null) return;
+      if (centerOf(fire.record).distanceTo(point) > 4) return;
+      const target = neighbourInDirection(fire.record, direction);
+      if (target) ignite(target, now);
+    });
+  };
+
+  const update = (deltaTime, now, rain, wind) => {
     fireTime.value = now;
+
+    [...scars].forEach((scar) => {
+      scar.amount = Math.max(0, scar.amount - deltaTime * 0.4);
+      setChar(scar.record, scar.amount);
+      if (scar.amount <= 0) scars.splice(scars.indexOf(scar), 1);
+    });
+
     [...fires].forEach((fire) => {
       const age = now - fire.start;
-      const ending = fire.collapsedAt !== null ? 1 - (now - fire.collapsedAt) / AFTER_COLLAPSE : 1;
+      if (fire.dousedAt === null && fire.collapsedAt === null && rain > 0.25) {
+        fire.water += deltaTime * rain;
+        if (fire.water > DOUSE_TIME * 0.6) {
+          fire.dousedAt = now;
+          onDouse();
+        }
+      }
+
+      let ending = 1;
+      if (fire.collapsedAt !== null) ending = 1 - (now - fire.collapsedAt) / AFTER_COLLAPSE;
+      if (fire.dousedAt !== null) ending = 1 - (now - fire.dousedAt) / DOUSE_TIME;
       fire.strength = Math.min(1, age * 2) * Math.max(0, ending);
 
-      setChar(fire.record, Math.min(1, age / BURN_TIME));
+      if (fire.dousedAt === null) fire.char = Math.min(1, age / BURN_TIME);
+      setChar(fire.record, fire.char);
 
-      if (fire.collapsedAt === null && age > BURN_TIME) {
+      if (wind.length() > 4.5 && fire.dousedAt === null && fire.collapsedAt === null) {
+        fire.nextSpread -= deltaTime;
+        if (fire.nextSpread <= 0) {
+          fire.nextSpread = 4;
+          const target = neighbourInDirection(fire.record, new THREE.Vector3(wind.x, 0, wind.y).normalize());
+          if (target) ignite(target, now);
+        }
+      }
+
+      if (fire.dousedAt === null && fire.collapsedAt === null && age > BURN_TIME) {
         breakables.collapse(fire.record);
         fire.collapsedAt = now;
       }
@@ -110,7 +171,10 @@ export const createFire = (scene, breakables) => {
       });
       fire.smokeMaterial.opacity = 0.55 * fire.strength;
 
-      if (ending <= 0) remove(fire);
+      if (ending <= 0) {
+        if (fire.dousedAt !== null) scars.push({ record: fire.record, amount: fire.char });
+        remove(fire);
+      }
     });
   };
 
@@ -121,7 +185,11 @@ export const createFire = (scene, breakables) => {
       setChar(fire.record, 0);
       remove(fire);
     });
+    scars.forEach((scar) => setChar(scar.record, 0));
+    scars.length = 0;
   };
 
-  return { ignite, update, isBurning, extinguishAll, setChar };
+  const getLevel = () => Math.min(1.5, fires.reduce((sum, fire) => sum + fire.strength, 0));
+
+  return { ignite, spread, update, isBurning, extinguishAll, setChar, getLevel };
 };
